@@ -629,6 +629,68 @@ function CellPopup({cell,onSelect,onClose}){
 }
 
 /* ══════════════════════════════════════════════════════════
+   초기 사용자 가이드 모달 — 첫 접속 시 자동 표시
+══════════════════════════════════════════════════════════ */
+function InitGuideModal({ onClose, onNeverShow }) {
+  const steps = [
+    { step:"1단계", icon:"👥", title:"직원 등록", desc:"사이드바 '직원' 탭에서 직원 이름을 추가하세요." },
+    { step:"2단계", icon:"⚙️", title:"인원 설정", desc:"'설정' 탭에서 석간·야간 필요 인원과 월 목표 근무시간을 설정하세요." },
+    { step:"3단계", icon:"⚡", title:"근무표 생성", desc:"상단 '전체 근무표 생성' 버튼을 클릭하면 자동으로 근무표가 만들어져요." },
+    { step:"4단계", icon:"✏️", title:"수동 수정", desc:"셀을 클릭해서 개별 근무를 변경할 수 있어요. 수정된 셀은 🔒로 표시돼요." },
+    { step:"5단계", icon:"💾", title:"저장 및 출력", desc:"'저장' 버튼으로 데이터를 저장하고, 인쇄·PDF·엑셀로 출력하세요." },
+  ];
+  return (
+    <div style={{position:"fixed",inset:0,background:"#0008",zIndex:4000,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:16,padding:28,
+        width:520,maxWidth:"95vw",boxShadow:"0 20px 60px #0003"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:"2.4rem",marginBottom:8}}>🏥</div>
+          <h2 style={{margin:0,fontSize:"1.1rem",fontWeight:800,color:"#0f172a"}}>
+            요양원 근무표 시스템에 오신 것을 환영해요!
+          </h2>
+          <p style={{margin:"6px 0 0",fontSize:"0.78rem",color:"#64748b"}}>
+            아래 순서대로 따라하면 바로 사용할 수 있어요 😊
+          </p>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+          {steps.map((s,i)=>(
+            <div key={i} style={{
+              display:"flex",alignItems:"center",gap:12,
+              background:"#f8fafc",borderRadius:10,padding:"10px 14px",
+              border:"1px solid #e2e8f0",
+            }}>
+              <div style={{
+                background:"linear-gradient(135deg,#2563eb,#4f46e5)",
+                color:"#fff",borderRadius:8,
+                padding:"4px 8px",fontSize:"0.66rem",fontWeight:700,whiteSpace:"nowrap",
+              }}>{s.step}</div>
+              <span style={{fontSize:"1.2rem"}}>{s.icon}</span>
+              <div>
+                <div style={{fontWeight:700,color:"#0f172a",fontSize:"0.84rem"}}>{s.title}</div>
+                <div style={{fontSize:"0.72rem",color:"#475569"}}>{s.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onClose} style={{
+          width:"100%",background:"linear-gradient(135deg,#2563eb,#4f46e5)",
+          color:"#fff",border:"none",borderRadius:10,padding:"11px",
+          fontSize:"0.88rem",fontWeight:700,cursor:"pointer",marginBottom:8,
+        }}>시작하기 🚀</button>
+
+        <button onClick={onNeverShow} style={{
+          width:"100%",background:"transparent",color:"#94a3b8",
+          border:"none",fontSize:"0.74rem",cursor:"pointer",padding:"4px",
+        }}>다시 보지 않기</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    코드 저장 결과 모달 — 생성된 코드 표시 + 복사
 ══════════════════════════════════════════════════════════ */
 function CodeResultModal({ code, onClose }) {
@@ -880,22 +942,32 @@ export default function App(){
   const [empSearch, setEmpSearch]  = useState("");
   const [showHelp,  setShowHelp]   = useState(false);
   const [saveMsg,   setSaveMsg]    = useState("");
-  const [codeResult,   setCodeResult]   = useState(null);   /* 저장 코드 표시 모달 */
-  const [showLoadModal,setShowLoadModal]= useState(false);  /* 코드 입력 모달 */
-  const tableRef   = useRef(null);
-  const hasMounted = useRef(false);  /* ★ useEffect보다 반드시 먼저 선언 */
+  const [codeResult,   setCodeResult]   = useState(null);
+  const [showLoadModal,setShowLoadModal]= useState(false);
+  const [locked,    setLocked]     = useState(false);          /* ① 수정 잠금 */
+  const [showGuide, setShowGuide]  = useState(false);          /* ③ 초기 가이드 */
+  const tableRef    = useRef(null);
+  const hasMounted  = useRef(false);
+  const saveTimer   = useRef(null);                            /* ② debounce 타이머 */
 
-  /* ── 자동저장 — 상태 변경 시마다 실행, 첫 렌더는 스킵 ── */
+  /* ── 첫 접속 시 가이드 자동 표시 ── */
+  useEffect(()=>{
+    if(!localStorage.getItem("guideShown")) setShowGuide(true);
+  },[]);
+
+  /* ── 자동저장 — debounce 1.5초 적용 ── */
   useEffect(()=>{
     if(!hasMounted.current){ hasMounted.current=true; return; }
-    try{
-      const data = { year, month, rate, patterns, depts, tab, results };
-      const json = JSON.stringify(data, (_k,v)=>v===undefined?null:v);
-      localStorage.setItem("scheduleData", json);
-      console.log("[자동저장] 완료:", json.length, "bytes");
-    }catch(e){
-      console.error("[자동저장] 실패:", e);
-    }
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(()=>{
+      try{
+        const data = { year, month, rate, patterns, depts, tab, results };
+        const json = JSON.stringify(data, (_k,v)=>v===undefined?null:v);
+        localStorage.setItem("scheduleData", json);
+        console.log("[자동저장] 완료:", json.length, "bytes");
+      }catch(e){ console.error("[자동저장] 실패:", e); }
+    }, 1500);
+    return ()=>clearTimeout(saveTimer.current);
   },[year,month,rate,patterns,depts,tab,results]);
 
   /* ══════════════════════════════════════════════════════
@@ -953,8 +1025,60 @@ export default function App(){
   };
 
   /* ══════════════════════════════════════════════════════
-     ☁️  클라우드 저장 (Supabase) — 코드 발급
+     📥  JSON 파일로 내보내기 (백업)
   ══════════════════════════════════════════════════════ */
+  const handleExport = () => {
+    try {
+      const data = { year, month, rate, patterns, depts, tab, results };
+      const json = JSON.stringify(data, (_k,v)=>v===undefined?null:v, 2);
+      const blob = new Blob([json], { type:"application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url;
+      a.download = `근무표_백업_${year}년${month}월.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSaveMsg("📥 JSON 백업 완료!");
+      setTimeout(()=>setSaveMsg(""),2500);
+      console.log("[JSON내보내기] 완료");
+    } catch(e) {
+      console.error("[JSON내보내기] 실패:", e);
+      alert("내보내기 실패: "+e.message);
+    }
+  };
+
+  /* ══════════════════════════════════════════════════════
+     📤  JSON 파일 가져오기 (복구)
+  ══════════════════════════════════════════════════════ */
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!window.confirm(`"${file.name}" 파일로 복구하시겠습니까?\n현재 데이터가 덮어써집니다.`)) {
+      e.target.value=""; return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (parsed.year     != null)  setYear(parsed.year);
+        if (parsed.month    != null)  setMonth(parsed.month);
+        if (parsed.rate     != null)  setRate(parsed.rate);
+        if (parsed.patterns?.length)  setPatterns(parsed.patterns);
+        if (parsed.depts?.length)     setDepts(parsed.depts);
+        if (parsed.tab)               setTab(parsed.tab);
+        if (parsed.results)           setResults(parsed.results);
+        setSaveMsg("📤 JSON 불러오기 완료!");
+        setTimeout(()=>setSaveMsg(""),2500);
+        console.log("[JSON가져오기] 완료", parsed);
+      } catch {
+        alert("파일 오류: 올바른 JSON 파일이 아닙니다.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  };
+
+  const fileInputRef = useRef(null);
   const handleCloudSave = async () => {
     if (!isSupabaseReady) {
       alert("Supabase가 설정되지 않았습니다.\n.env 파일에 VITE_SUPABASE_URL과 VITE_SUPABASE_ANON_KEY를 입력해주세요.");
@@ -1071,9 +1195,10 @@ export default function App(){
     setResults(nRes); setPopup(null);
   },[depts,patterns,D,results]);
 
-  /* Manual edit — 셀 클릭 시 locked:true 설정 */
+  /* Manual edit — locked 상태이면 차단 */
   const applyEdit=useCallback((empIdx,dayIdx,newType)=>{
-    if(!res||res.err)return;
+    if(!res||res.err) return;
+    if(locked) return;   /* ★ 잠금 상태 차단 */
     const newSch=res.sch.map((row,i)=>i!==empIdx?row:row.map((cell,d)=>{
       if(d!==dayIdx) return cell;
       if(newType==="__unlock__") return mkCell(cellT(cell), false);  /* 잠금 해제 */
@@ -1332,6 +1457,14 @@ export default function App(){
           onSave={savePattern} onClose={()=>setPatModal(null)}/>
       )}
 
+      {/* 초기 가이드 모달 */}
+      {showGuide&&(
+        <InitGuideModal
+          onClose={()=>setShowGuide(false)}
+          onNeverShow={()=>{ localStorage.setItem("guideShown","1"); setShowGuide(false); }}
+        />
+      )}
+
       {/* 사용 설명서 모달 */}
       {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
 
@@ -1470,6 +1603,30 @@ export default function App(){
               background:"#f0f9ff",color:"#0369a1",border:"1.5px solid #bae6fd",
               borderRadius:9,padding:"8px 14px",fontSize:"0.8rem",fontWeight:600,
               cursor:"pointer"}}>📂 불러오기</button>
+
+            {/* JSON 내보내기/가져오기 */}
+            <button onClick={handleExport} style={{
+              background:"#f0fdf4",color:"#15803d",border:"1.5px solid #bbf7d0",
+              borderRadius:9,padding:"8px 14px",fontSize:"0.8rem",fontWeight:600,
+              cursor:"pointer"}} title="JSON 파일로 백업">📥 백업</button>
+            <button onClick={()=>fileInputRef.current?.click()} style={{
+              background:"#faf5ff",color:"#7c3aed",border:"1.5px solid #e9d5ff",
+              borderRadius:9,padding:"8px 14px",fontSize:"0.8rem",fontWeight:600,
+              cursor:"pointer"}} title="JSON 파일에서 복구">📤 복구</button>
+            <input ref={fileInputRef} type="file" accept=".json"
+              onChange={handleImport} style={{display:"none"}}/>
+
+            {/* 수정 잠금 토글 */}
+            <button onClick={()=>setLocked(p=>!p)} style={{
+              background: locked ? "#fef2f2" : "#f8fafc",
+              color:      locked ? "#dc2626" : "#64748b",
+              border:     `1.5px solid ${locked?"#fecaca":"#e2e8f0"}`,
+              borderRadius:9,padding:"8px 14px",fontSize:"0.8rem",fontWeight:600,
+              cursor:"pointer",
+            }} title={locked?"잠금 해제":"수정 잠금"}>
+              {locked ? "🔒 잠금 중" : "🔓 잠금"}
+            </button>
+
             <button onClick={()=>setShowHelp(true)} style={{
               background:"#f0fdf4",color:"#166534",border:"1.5px solid #bbf7d0",
               borderRadius:9,padding:"8px 14px",fontSize:"0.8rem",fontWeight:600,
@@ -1677,6 +1834,43 @@ export default function App(){
                     <div>• 편집 시 기존 근무표 초기화됨</div>
                     <div>• 삭제 시 해당 직원 p1 자동 재배정</div>
                   </div>
+
+                  {/* ⭐ 추천 패턴 빠른 추가 */}
+                  <div style={{marginTop:10,padding:"9px 10px",background:"#fffbeb",
+                    borderRadius:9,border:"1px solid #fde68a"}}>
+                    <div style={{fontSize:"0.63rem",color:"#92400e",fontWeight:700,marginBottom:7}}>
+                      ⭐ 추천 패턴 빠른 추가
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {[
+                        {name:"균형형 (10일)", seq:["주","주","석","야","휴","휴","주","석","야","휴"], tag:"⭐⭐⭐⭐⭐ 추천"},
+                        {name:"안정형 (7일)",  seq:["주","주","주","석","야","휴","휴"], tag:"⭐⭐⭐⭐"},
+                        {name:"휴식형 (5일)",  seq:["주","석","야","휴","휴"], tag:"⭐⭐⭐"},
+                      ].map((rec,ri)=>(
+                        <button key={ri} onClick={()=>{
+                          const id=newPid();
+                          setPatterns(p=>[...p,{id,name:rec.name,seq:rec.seq,builtin:false,stars:5-ri}]);
+                          setSaveMsg(`✅ "${rec.name}" 추가됨!`);
+                          setTimeout(()=>setSaveMsg(""),2000);
+                        }} style={{
+                          background:"#fff",border:"1px solid #fde68a",borderRadius:8,
+                          padding:"7px 10px",cursor:"pointer",textAlign:"left",
+                        }}>
+                          <div style={{fontSize:"0.72rem",fontWeight:700,color:"#92400e",marginBottom:4}}>
+                            {rec.name} <span style={{fontSize:"0.6rem",color:"#b45309"}}>{rec.tag}</span>
+                          </div>
+                          <div style={{display:"flex",gap:2,flexWrap:"wrap"}}>
+                            {rec.seq.map((s,k)=>(
+                              <span key={k} style={{display:"inline-block",padding:"1px 4px",
+                                borderRadius:3,fontSize:"0.6rem",fontWeight:700,
+                                background:SHIFT[s].bg,color:SHIFT[s].txt,
+                                border:`1px solid ${SHIFT[s].brd}`}}>{s}</span>
+                            ))}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1837,7 +2031,27 @@ export default function App(){
                     </div>
                   </div>
 
-                  <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}} className="print-area">
+                  <div id="print-area" style={{overflowX:"auto",WebkitOverflowScrolling:"touch",
+                    position:"relative"}} className="print-area">
+                    {locked&&(
+                      <div style={{
+                        position:"absolute",inset:0,zIndex:10,
+                        background:"rgba(241,245,249,0.6)",
+                        display:"flex",alignItems:"flex-start",justifyContent:"center",
+                        paddingTop:20,pointerEvents:"none",borderRadius:8,
+                      }}>
+                        <div style={{
+                          background:"#fff",border:"2px solid #fecaca",borderRadius:12,
+                          padding:"10px 20px",display:"flex",alignItems:"center",gap:8,
+                          boxShadow:"0 4px 16px #0001",
+                        }}>
+                          <span style={{fontSize:"1.2rem"}}>🔒</span>
+                          <span style={{fontWeight:700,color:"#dc2626",fontSize:"0.84rem"}}>
+                            수정 잠금 중 — 🔓 잠금 버튼을 눌러 해제하세요
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     <table ref={tableRef} style={{borderCollapse:"collapse",fontSize:"0.72rem",whiteSpace:"nowrap"}}>
                       <thead>
                         <tr style={{background:"#f8fafc"}}>
