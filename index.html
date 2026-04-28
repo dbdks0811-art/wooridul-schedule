@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>요양원 근무표 관리 시스템</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Malgun Gothic', 'Noto Sans KR', sans-serif; }
+
+      /* ── 인쇄 전용 CSS ── */
+      @media print {
+        .no-print { display: none !important; }
+        body { background: #fff !important; color: #000 !important; }
+        .print-area { overflow: visible !important; }
+        table { border-collapse: collapse; font-size: 9px !important; width: 100%; }
+        th, td {
+          border: 1px solid #bbb !important;
+          padding: 2px 4px !important;
+          color: #000 !important;
+          background: #fff !important;
+        }
+        th { background: #f0f0f0 !important; font-weight: bold; }
+        @page { margin: 8mm; size: A3 landscape; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
